@@ -127,7 +127,7 @@ public class RedisStateCenter implements StateCenter {
   public void saveExceptionLog(IdempotenceParamWrapper param, Object[] arguments, ConsumeStage consumeStage, String message, Throwable throwable) {
     String argsJson = JacksonUtils.toStr(arguments);
     log.error("Consume [{}] error. Scenario: [{}], ConsumeMode: [{}]. ConsumeStage: [{}]. Message: [{}]. Arguments: [{}]. XId: [{}]",
-            param.getKey(), param.getScenario(), param.getConsumeMode(), consumeStage, argsJson, message, param.getXId(), throwable);
+            param.getKey(), param.getScenario(), param.getConsumeMode(), consumeStage, message, argsJson, param.getXId(), throwable);
   }
 
   @Override

@@ -204,7 +204,7 @@ public class DbStateCenter implements StateCenter, InitializingBean, Application
       doSaveLog(param, consumeStage, argsJson, message, throwable);
     } catch (Exception e) {
       log.error("Save log error [{}]. Scenario: [{}], ConsumeMode: [{}]. ConsumeStage: [{}]. Message: [{}]. Arguments: [{}]. XId: [{}].",
-              param.getKey(), param.getScenario(), param.getConsumeMode(), consumeStage, argsJson, arguments, param.getXId(), e);
+              param.getKey(), param.getScenario(), param.getConsumeMode(), consumeStage, message, argsJson, param.getXId(), e);
     }
   }
 
