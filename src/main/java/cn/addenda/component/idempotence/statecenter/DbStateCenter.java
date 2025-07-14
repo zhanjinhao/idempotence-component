@@ -4,7 +4,7 @@ import cn.addenda.component.base.collection.ArrayUtils;
 import cn.addenda.component.base.datetime.DateUtils;
 import cn.addenda.component.base.exception.SystemException;
 import cn.addenda.component.base.jackson.util.JacksonUtils;
-import cn.addenda.component.base.sql.ConnectionUtils;
+import cn.addenda.component.base.util.ConnectionUtils;
 import cn.addenda.component.idempotence.*;
 import cn.addenda.component.spring.cron.CronBak;
 import lombok.Setter;
@@ -87,7 +87,8 @@ public class DbStateCenter implements StateCenter, InitializingBean, Application
           return old.getConsumeState();
         }
       } finally {
-        ConnectionUtils.setAutoCommitAndClose(connection, originalAutoCommit);
+        ConnectionUtils.setAutoCommit(connection, originalAutoCommit);
+        ConnectionUtils.close(connection);
       }
     }
   }
@@ -191,7 +192,8 @@ public class DbStateCenter implements StateCenter, InitializingBean, Application
       }
       throw e;
     } finally {
-      ConnectionUtils.setAutoCommitAndClose(connection, originalAutoCommit);
+      ConnectionUtils.setAutoCommit(connection, originalAutoCommit);
+      ConnectionUtils.close(connection);
     }
   }
 
@@ -247,7 +249,8 @@ public class DbStateCenter implements StateCenter, InitializingBean, Application
       }
       throw e;
     } finally {
-      ConnectionUtils.setAutoCommitAndClose(connection, originalAutoCommit);
+      ConnectionUtils.setAutoCommit(connection, originalAutoCommit);
+      ConnectionUtils.close(connection);
     }
   }
 
@@ -294,7 +297,8 @@ public class DbStateCenter implements StateCenter, InitializingBean, Application
       }
       throw e;
     } finally {
-      ConnectionUtils.setAutoCommitAndClose(connection, originalAutoCommit);
+      ConnectionUtils.setAutoCommit(connection, originalAutoCommit);
+      ConnectionUtils.close(connection);
     }
     return true;
   }

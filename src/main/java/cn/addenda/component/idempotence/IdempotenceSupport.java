@@ -1,6 +1,5 @@
 package cn.addenda.component.idempotence;
 
-import cn.addenda.component.base.concurrent.SleepUtils;
 import cn.addenda.component.base.datetime.TimeUnitUtils;
 import cn.addenda.component.base.exception.ComponentServiceException;
 import cn.addenda.component.base.exception.ServiceException;
@@ -9,6 +8,7 @@ import cn.addenda.component.base.jackson.util.JacksonUtils;
 import cn.addenda.component.base.lambda.TBiFunction;
 import cn.addenda.component.base.lambda.TSupplier;
 import cn.addenda.component.base.util.RetryUtils;
+import cn.addenda.component.base.util.SleepUtils;
 import cn.addenda.component.idempotence.statecenter.StateCenter;
 import cn.addenda.component.spring.context.ValueResolverHelper;
 import cn.addenda.component.spring.util.SpELUtils;

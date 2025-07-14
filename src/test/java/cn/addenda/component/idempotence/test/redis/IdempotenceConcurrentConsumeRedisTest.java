@@ -1,7 +1,7 @@
 package cn.addenda.component.idempotence.test.redis;
 
-import cn.addenda.component.base.concurrent.SleepUtils;
 import cn.addenda.component.base.exception.ServiceException;
+import cn.addenda.component.base.util.SleepUtils;
 import cn.addenda.component.idempotence.*;
 import cn.addenda.component.idempotence.test.IdempotenceTestConfiguration;
 import org.junit.After;
