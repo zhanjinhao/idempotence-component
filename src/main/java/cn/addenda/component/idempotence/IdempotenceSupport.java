@@ -23,6 +23,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.util.StringUtils;
 
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
@@ -47,6 +48,9 @@ public class IdempotenceSupport implements EnvironmentAware, InitializingBean, A
 
   @Setter
   protected String spELArgsName = "spELArgs";
+
+  @Setter
+  private double retryIntervalFactor = 0.5d;
 
   private final Map<String, StateCenter> stateCenterMap = new ConcurrentHashMap<>();
 
@@ -148,7 +152,7 @@ public class IdempotenceSupport implements EnvironmentAware, InitializingBean, A
       Throwable throwable = throwableCallback(stateCenter, param, arguments, ConsumeStage.RETRY_ERROR,
               "CAS EXCEPTION to CONSUMING error.", e);
       try {
-        RetryUtils.retryWhenException(() -> stateCenter.casState(param, ConsumeState.CONSUMING, ConsumeState.EXCEPTION, false), param);
+        retryGet(() -> stateCenter.casState(param, ConsumeState.CONSUMING, ConsumeState.EXCEPTION, false), param);
       } catch (Throwable e1) {
         throw throwableCallback(stateCenter, param, arguments, ConsumeStage.RETRY_ERROR_AND_RESET_ERROR, "Reset CONSUMING to EXCEPTION error.", e1);
       }
@@ -196,7 +200,7 @@ public class IdempotenceSupport implements EnvironmentAware, InitializingBean, A
               "GetSetIfAbsent CONSUMING state error.", e);
       try {
         // 这里出现异常的概率非常高，因为getSetIfAbsent()失败，表示当前容器和状态中心的通信异常。
-        RetryUtils.retryWhenException(() -> stateCenter.delete(param), param);
+        retryGet(() -> stateCenter.delete(param), param);
       } catch (Throwable throwable) {
         throw throwableCallback(stateCenter, param, arguments, ConsumeStage.GETSET_IF_ABSENT_ERROR_AND_DELETE_ERROR,
                 "GetSetIfAbsent CONSUMING state error and delete key error.", throwable);
@@ -217,7 +221,7 @@ public class IdempotenceSupport implements EnvironmentAware, InitializingBean, A
       switch (scenario) {
         case REQUEST:
           try {
-            RetryUtils.retryWhenException(() -> stateCenter.delete(param), param);
+            retryGet(() -> stateCenter.delete(param), param);
           } catch (Throwable e1) {
             throw throwableCallback(stateCenter, param, arguments, ConsumeStage.SERVICE_EXCEPTION_AND_DELETE_ERROR,
                     "ServiceException and delete error.", e1);
@@ -232,7 +236,7 @@ public class IdempotenceSupport implements EnvironmentAware, InitializingBean, A
       throw casConsumingToException(stateCenter, param, arguments, e);
     }
     try {
-      RetryUtils.retryWhenException(() -> stateCenter.casState(param, ConsumeState.CONSUMING, ConsumeState.SUCCESS, false), param);
+      retryGet(() -> stateCenter.casState(param, ConsumeState.CONSUMING, ConsumeState.SUCCESS, false), param);
     } catch (Throwable e) {
       throwableCallback(stateCenter, param, arguments, ConsumeStage.AFTER_CONSUMPTION,
               "CAS CONSUMING to SUCCESS error.", e);
@@ -245,7 +249,7 @@ public class IdempotenceSupport implements EnvironmentAware, InitializingBean, A
     // 业务异常的throwable。是要扔出去的异常。
     Throwable throwable = throwableCallback(stateCenter, param, arguments, ConsumeStage.IN_CONSUMPTION, "Biz consumption error.", bizThrowable);
     try {
-      RetryUtils.retryWhenException(() -> stateCenter.casState(param, ConsumeState.CONSUMING, ConsumeState.EXCEPTION, false), param);
+      retryGet(() -> stateCenter.casState(param, ConsumeState.CONSUMING, ConsumeState.EXCEPTION, false), param);
     } catch (Throwable t) {
       // 如果CAS CONSUMING到EXCEPTION失败。
       throw throwableCallback(stateCenter, param, arguments, ConsumeStage.CAS_CONSUMING_TO_EXCEPTION_ERROR, "CAS CONSUMING to EXCEPTION error.", t);
@@ -306,6 +310,12 @@ public class IdempotenceSupport implements EnvironmentAware, InitializingBean, A
       return throwable;
     }
     return new IdempotenceException(msg, consumeStage, param.getXId(), throwable);
+  }
+
+  private <R> void retryGet(TSupplier<R> supplier, IdempotenceParamWrapper param) throws Throwable {
+    RetryUtils.retryWhenException(supplier, param,
+            // 异常重试的间隔 = 预计执行时间的间隔*retryIntervalFactor
+            Duration.ofMillis((long) (param.getTimeUnit().toMillis(param.getExpectCost()) * retryIntervalFactor)));
   }
 
   private String resolve(String value) {
