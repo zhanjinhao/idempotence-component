@@ -9,7 +9,6 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import javax.sql.DataSource;
@@ -27,20 +26,7 @@ public class IdempotenceRepeatConsumeDbTest extends AbstractIdempotenceDbTest {
 
   @Configuration
   static class AConfig {
-    @Bean
-    public DbStateCenter_RETRY_ERROR DbStateCenter_RETRY_ERROR(DataSource dataSource) {
-      return new DbStateCenter_RETRY_ERROR(dataSource);
-    }
 
-    @Bean
-    public DbStateCenter_RETRY_ERROR_AND_RESET_ERROR_EXCEPTION DbStateCenter_RETRY_ERROR_AND_RESET_ERROR_EXCEPTION(DataSource dataSource) {
-      return new DbStateCenter_RETRY_ERROR_AND_RESET_ERROR_EXCEPTION(dataSource);
-    }
-
-    @Bean
-    public DbStateCenter_RETRY_ERROR_AND_RESET_ERROR_CONSUMING DbStateCenter_RETRY_ERROR_AND_RESET_ERROR_CONSUMING(DataSource dataSource) {
-      return new DbStateCenter_RETRY_ERROR_AND_RESET_ERROR_CONSUMING(dataSource);
-    }
   }
 
   @Before

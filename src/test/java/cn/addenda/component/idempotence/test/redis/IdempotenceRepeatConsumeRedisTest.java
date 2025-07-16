@@ -8,7 +8,6 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
@@ -25,20 +24,7 @@ public class IdempotenceRepeatConsumeRedisTest extends AbstractIdempotenceRedisT
 
   @Configuration
   static class AConfig {
-    @Bean
-    public RedisStateCenter_RETRY_ERROR RedisStateCenter_RETRY_ERROR(StringRedisTemplate dataSource) {
-      return new RedisStateCenter_RETRY_ERROR(dataSource);
-    }
 
-    @Bean
-    public RedisStateCenter_RETRY_ERROR_AND_RESET_ERROR_EXCEPTION RedisStateCenter_RETRY_ERROR_AND_RESET_ERROR_EXCEPTION(StringRedisTemplate dataSource) {
-      return new RedisStateCenter_RETRY_ERROR_AND_RESET_ERROR_EXCEPTION(dataSource);
-    }
-
-    @Bean
-    public RedisStateCenter_RETRY_ERROR_AND_RESET_ERROR_CONSUMING RedisStateCenter_RETRY_ERROR_AND_RESET_ERROR_CONSUMING(StringRedisTemplate dataSource) {
-      return new RedisStateCenter_RETRY_ERROR_AND_RESET_ERROR_CONSUMING(dataSource);
-    }
   }
 
   @Before
