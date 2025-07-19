@@ -14,6 +14,12 @@ public enum ConsumeMode {
   /**
    * 数据处理成功成功，才认为数据被消费成功
    */
-  SUCCESS
+  SUCCESS,
+
+  /**
+   * todo
+   * 记录消费日志，不做幂等
+   */
+  LOG,
 
 }
