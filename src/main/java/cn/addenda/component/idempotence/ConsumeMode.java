@@ -16,10 +16,4 @@ public enum ConsumeMode {
    */
   SUCCESS,
 
-  /**
-   * todo
-   * 记录消费日志，不做幂等
-   */
-  LOG,
-
 }
