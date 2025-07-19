@@ -1,6 +1,8 @@
 package cn.addenda.component.idempotence.test.db;
 
 import cn.addenda.component.idempotence.*;
+import cn.addenda.component.idempotence.statecenter.DbStateCenter;
+import cn.addenda.component.idempotence.statecenter.StateCenter;
 import cn.addenda.component.idempotence.test.IdempotenceTestConfiguration;
 import lombok.SneakyThrows;
 import org.junit.*;
@@ -23,6 +25,11 @@ public class IdempotenceGetSetIfAbsentDbTest extends AbstractIdempotenceDbTest {
 
   @Configuration
   static class AConfig {
+    @Bean
+    public DbStateCenter dbStateCenter(DataSource dataSource) {
+      return new DbStateCenter(dataSource);
+    }
+
     @Bean
     public DbStateCenter_BEFORE_CONSUMPTION DbStateCenter_BEFORE_CONSUMPTION(DataSource dataSource) {
       return new DbStateCenter_BEFORE_CONSUMPTION(dataSource);
@@ -108,6 +115,11 @@ public class IdempotenceGetSetIfAbsentDbTest extends AbstractIdempotenceDbTest {
       assertStateCenterEquals(dataSource, rawKey, idempotenceException, null);
       assertStateCenterHisEquals(dataSource, rawKey, idempotenceException, "CONSUMING");
       assertExceptionLogEquals(dataSource, rawKey, idempotenceException, expected);
+
+      StateCenter stateCenter = context.getBean("dbStateCenter", StateCenter.class);
+      stateCenter.handle(idempotenceException);
+      assertStateCenterEquals(dataSource, rawKey, idempotenceException, null);
+      assertStateCenterHisEquals(dataSource, rawKey, idempotenceException, "CONSUMING");
     }
   }
 
@@ -135,6 +147,11 @@ public class IdempotenceGetSetIfAbsentDbTest extends AbstractIdempotenceDbTest {
       assertStateCenterEquals(dataSource, rawKey, idempotenceException, "CONSUMING");
       assertStateCenterHisEquals(dataSource, rawKey, idempotenceException, null);
       assertExceptionLogEquals(dataSource, rawKey, idempotenceException, expected);
+
+      StateCenter stateCenter = context.getBean("dbStateCenter", StateCenter.class);
+      stateCenter.handle(idempotenceException);
+      assertStateCenterEquals(dataSource, rawKey, idempotenceException, null);
+      assertStateCenterHisEquals(dataSource, rawKey, idempotenceException, "CONSUMING");
     }
   }
 

@@ -2,6 +2,8 @@ package cn.addenda.component.idempotence.test.db;
 
 import cn.addenda.component.base.exception.ServiceException;
 import cn.addenda.component.idempotence.*;
+import cn.addenda.component.idempotence.statecenter.DbStateCenter;
+import cn.addenda.component.idempotence.statecenter.StateCenter;
 import cn.addenda.component.idempotence.test.IdempotenceTestConfiguration;
 import lombok.SneakyThrows;
 import org.junit.After;
@@ -28,8 +30,18 @@ public class IdempotenceConsumeDbTest extends AbstractIdempotenceDbTest {
   @Configuration
   static class AConfig {
     @Bean
-    public DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR(DataSource dataSource) {
-      return new DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR(dataSource);
+    public DbStateCenter dbStateCenter(DataSource dataSource) {
+      return new DbStateCenter(dataSource);
+    }
+
+    @Bean
+    public DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING(DataSource dataSource) {
+      return new DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING(dataSource);
+    }
+
+    @Bean
+    public DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL(DataSource dataSource) {
+      return new DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL(dataSource);
     }
 
     @Bean
@@ -102,11 +114,11 @@ public class IdempotenceConsumeDbTest extends AbstractIdempotenceDbTest {
 
 
   @Test
-  public void test_SERVICE_EXCEPTION_AND_DELETE_ERROR() throws InterruptedException {
+  public void test_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING() throws InterruptedException {
     IdempotenceHelper idempotenceHelper = context.getBean(IdempotenceHelper.class);
     DataSource dataSource = context.getBean(DataSource.class);
 
-    String rawKey = "DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR";
+    String rawKey = "DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING";
     try {
       IdempotenceAttr build = IdempotenceAttr.builder()
               .prefix(prefix)
@@ -119,9 +131,47 @@ public class IdempotenceConsumeDbTest extends AbstractIdempotenceDbTest {
         throw new ServiceException("for purpose! ");
       });
     } catch (IdempotenceException idempotenceException) {
+      Assert.assertEquals(ConsumeStage.SERVICE_EXCEPTION_AND_DELETE_ERROR, idempotenceException.getConsumeStage());
+      String expected = "Exception occurred in [SERVICE_EXCEPTION_AND_DELETE_ERROR] stage. ServiceException and delete error.";
       assertStateCenterHisEquals(dataSource, rawKey, idempotenceException, null);
       assertStateCenterEquals(dataSource, rawKey, idempotenceException, "CONSUMING");
-      assertExceptionLogEquals(dataSource, rawKey, idempotenceException, "Exception occurred in [SERVICE_EXCEPTION_AND_DELETE_ERROR] stage. ServiceException and delete error.");
+      assertExceptionLogEquals(dataSource, rawKey, idempotenceException, expected);
+
+      StateCenter stateCenter = context.getBean("dbStateCenter", StateCenter.class);
+      stateCenter.handle(idempotenceException);
+      assertStateCenterEquals(dataSource, rawKey, idempotenceException, null);
+      assertStateCenterHisEquals(dataSource, rawKey, idempotenceException, "CONSUMING");
+    }
+  }
+
+  @Test
+  public void test_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL() throws InterruptedException {
+    IdempotenceHelper idempotenceHelper = context.getBean(IdempotenceHelper.class);
+    DataSource dataSource = context.getBean(DataSource.class);
+
+    String rawKey = "DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL";
+    try {
+      IdempotenceAttr build = IdempotenceAttr.builder()
+              .prefix(prefix)
+              .spEL(rawKey)
+              .scenario(IdempotenceScenario.REQUEST)
+              .stateCenter(rawKey)
+              .consumeMode(ConsumeMode.SUCCESS)
+              .build();
+      idempotenceHelper.idempotent(build, () -> {
+        throw new ServiceException("for purpose! ");
+      });
+    } catch (IdempotenceException idempotenceException) {
+      Assert.assertEquals(ConsumeStage.SERVICE_EXCEPTION_AND_DELETE_ERROR, idempotenceException.getConsumeStage());
+      String expected = "Exception occurred in [SERVICE_EXCEPTION_AND_DELETE_ERROR] stage. ServiceException and delete error.";
+      assertStateCenterHisEquals(dataSource, rawKey, idempotenceException, "CONSUMING");
+      assertStateCenterEquals(dataSource, rawKey, idempotenceException, null);
+      assertExceptionLogEquals(dataSource, rawKey, idempotenceException, expected);
+
+      StateCenter stateCenter = context.getBean("dbStateCenter", StateCenter.class);
+      stateCenter.handle(idempotenceException);
+      assertStateCenterEquals(dataSource, rawKey, idempotenceException, null);
+      assertStateCenterHisEquals(dataSource, rawKey, idempotenceException, "CONSUMING");
     }
   }
 
@@ -176,6 +226,11 @@ public class IdempotenceConsumeDbTest extends AbstractIdempotenceDbTest {
       assertStateCenterEquals(dataSource, rawKey, idempotenceException, "CONSUMING");
       assertStateCenterHisEquals(dataSource, rawKey, idempotenceException, null);
       assertExceptionLogEquals(dataSource, rawKey, idempotenceException, expected);
+
+      StateCenter stateCenter = context.getBean("dbStateCenter", StateCenter.class);
+      stateCenter.handle(idempotenceException);
+      assertStateCenterEquals(dataSource, rawKey, idempotenceException, "EXCEPTION");
+      assertStateCenterHisEquals(dataSource, rawKey, idempotenceException, null);
     }
   }
 
@@ -203,6 +258,11 @@ public class IdempotenceConsumeDbTest extends AbstractIdempotenceDbTest {
       assertStateCenterEquals(dataSource, rawKey, idempotenceException, "EXCEPTION");
       assertStateCenterHisEquals(dataSource, rawKey, idempotenceException, null);
       assertExceptionLogEquals(dataSource, rawKey, idempotenceException, expected);
+
+      StateCenter stateCenter = context.getBean("dbStateCenter", StateCenter.class);
+      stateCenter.handle(idempotenceException);
+      assertStateCenterEquals(dataSource, rawKey, idempotenceException, "EXCEPTION");
+      assertStateCenterHisEquals(dataSource, rawKey, idempotenceException, null);
     }
   }
 

@@ -24,6 +24,7 @@ import java.io.StringWriter;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * @author addenda
@@ -68,41 +69,44 @@ public class DbStateCenter implements StateCenter, InitializingBean, Application
           ps.setString(4, param.getConsumeMode().name());
           ps.setString(5, param.getScenario().name());
           ps.setString(6, param.getXId());
-          ps.setObject(7, consumeState.name());
-          ps.setLong(8, param.getTtlInSecs());
+          ps.setString(7, consumeState.name());
+          ps.setInt(8, param.getTtlInSecs());
           ps.executeUpdate();
         }
         connection.commit();
         return null;
       } catch (SQLException e) {
-        if (connection != null) {
-          connection.rollback();
-        }
+        rollback(connection);
         DataAccessException translate = exceptionTranslator.translate(e.getMessage() + "\n", null, e);
         if (!(translate instanceof DuplicateKeyException)) {
           throw e;
         }
+
+        // 没有异常的时候，直接return null了
+        // 有异常的时候 且 异常不是DuplicateKeyException，throw出去了
+        // 有异常的时候 且 异常是DuplicateKeyException，能执行下面的代码
         StateCenterEntity old = doGet(param, true, connection);
         if (old != null) {
           return old.getConsumeState();
         }
       } finally {
-        ConnectionUtils.setAutoCommit(connection, originalAutoCommit);
-        ConnectionUtils.close(connection);
+        close(connection, originalAutoCommit);
       }
     }
   }
 
   private static final String GET_SQL1 =
-          "select `id`, `namespace`, `prefix`, `raw_key`, `consume_mode`, `scenario`, `x_id`, `consume_state`, `expire_time`, `create_time` from t_idempotence_state_center "
-                  + "where `namespace` = ? and `prefix` = ? and `raw_key` = ?";
+          "select `id`, `namespace`, `prefix`, `raw_key`, `consume_mode`, `scenario`, `x_id`, `consume_state`, `expire_time`, `create_time`" +
+                  " from t_idempotence_state_center "
+                  + " where `namespace` = ? and `prefix` = ? and `raw_key` = ?";
 
   private static final String GET_SQL2 =
-          "select `id`, `namespace`, `prefix`, `raw_key`, `consume_mode`, `scenario`, `x_id`, `consume_state`, `expire_time`, `create_time` from t_idempotence_state_center "
-                  + "where `namespace` = ? and `prefix` = ? and `raw_key` = ? and `x_id` = ?";
+          "select `id`, `namespace`, `prefix`, `raw_key`, `consume_mode`, `scenario`, `x_id`, `consume_state`, `expire_time`, `create_time`" +
+                  " from t_idempotence_state_center "
+                  + " where `namespace` = ? and `prefix` = ? and `raw_key` = ? and `x_id` = ?";
 
-  @SneakyThrows
-  private StateCenterEntity doGet(IdempotenceParamWrapper param, boolean includeOther, Connection connection) {
+  private StateCenterEntity doGet(IdempotenceParamWrapper param, boolean includeOther, Connection connection)
+          throws SQLException {
     String getSql = includeOther ? GET_SQL1 : GET_SQL2;
     try (PreparedStatement preparedStatement = connection.prepareStatement(getSql)) {
       preparedStatement.setString(1, param.getNamespace());
@@ -112,20 +116,24 @@ public class DbStateCenter implements StateCenter, InitializingBean, Application
         preparedStatement.setString(4, param.getXId());
       }
       ResultSet resultSet = preparedStatement.executeQuery();
-      List<StateCenterEntity> stateCenterEntityList = assembleEntityList(resultSet);
-      if (stateCenterEntityList.isEmpty()) {
-        return null;
-      } else if (stateCenterEntityList.size() > 1) {
-        String msg = String.format("Get StateCenterEntity from [%s] error. Result has multi records.", param);
-        throw SystemException.unExpectedException(msg);
-      } else {
-        return stateCenterEntityList.get(0);
-      }
+      Supplier<String> logMsgSupplier = () -> String.format("Get StateCenterEntity from [%s] error. Result has multi records.", JacksonUtils.toStr(param));
+      return extractStateCenterEntity(resultSet, logMsgSupplier);
     }
   }
 
-  @SneakyThrows
-  private List<StateCenterEntity> assembleEntityList(ResultSet resultSet) {
+  private StateCenterEntity extractStateCenterEntity(ResultSet resultSet, Supplier<String> logMsgSupplier)
+          throws SQLException {
+    List<StateCenterEntity> stateCenterEntityList = assembleEntityList(resultSet);
+    if (stateCenterEntityList.isEmpty()) {
+      return null;
+    } else if (stateCenterEntityList.size() > 1) {
+      throw SystemException.unExpectedException(logMsgSupplier.get());
+    } else {
+      return stateCenterEntityList.get(0);
+    }
+  }
+
+  private List<StateCenterEntity> assembleEntityList(ResultSet resultSet) throws SQLException {
     List<StateCenterEntity> stateCenterEntityList = new ArrayList<>();
     while (resultSet.next()) {
       StateCenterEntity stateCenterEntity = new StateCenterEntity();
@@ -150,50 +158,80 @@ public class DbStateCenter implements StateCenter, InitializingBean, Application
     return stateCenterEntityList;
   }
 
-
+  /**
+   * CAS其他xId的数据，修改expireTime
+   */
   private static final String UPDATE_SQL1 =
           "update t_idempotence_state_center "
                   + "set `consume_state` = ?, `expire_time` = date_add(now(), interval ? second), `x_id` = ? " +
                   "where `namespace` = ? and `prefix` = ? and `raw_key` = ? and `consume_state` = ? ";
 
+  /**
+   * CAS当前xId的数据，不修改expireTime
+   */
   private static final String UPDATE_SQL2 =
           "update t_idempotence_state_center "
-                  + "set `consume_state` = ?, `expire_time` = date_add(now(), interval ? second), `x_id` = ? " +
+                  + "set `consume_state` = ? " +
                   "where `namespace` = ? and `prefix` = ? and `raw_key` = ? and `consume_state` = ? and `x_id` = ? ";
 
   @Override
   @SneakyThrows
   public boolean casState(IdempotenceParamWrapper param, ConsumeState expected, ConsumeState consumeState, boolean casOther) {
-    String updateSql = casOther ? UPDATE_SQL1 : UPDATE_SQL2;
+    return casOther ? doCasState1(param, expected, consumeState) : doCasState2(param, expected, consumeState);
+  }
+
+  private boolean doCasState1(IdempotenceParamWrapper param, ConsumeState expected, ConsumeState consumeState)
+          throws SQLException {
     boolean result;
     Connection connection = null;
     boolean originalAutoCommit = false;
     try {
       connection = dataSource.getConnection();
       originalAutoCommit = ConnectionUtils.setAutoCommitFalse(connection);
-      try (PreparedStatement ps = connection.prepareStatement(updateSql)) {
+      try (PreparedStatement ps = connection.prepareStatement(UPDATE_SQL1)) {
         ps.setString(1, consumeState.name());
-        ps.setLong(2, param.getTtlInSecs());
+        ps.setInt(2, param.getTtlInSecs());
         ps.setString(3, param.getXId());
         ps.setString(4, param.getNamespace());
         ps.setString(5, param.getPrefix());
         ps.setString(6, param.getRawKey());
         ps.setString(7, expected.name());
-        if (!casOther) {
-          ps.setString(8, param.getXId());
-        }
         result = ps.executeUpdate() == 1;
       }
       connection.commit();
       return result;
     } catch (SQLException e) {
-      if (connection != null) {
-        connection.rollback();
-      }
+      rollback(connection);
       throw e;
     } finally {
-      ConnectionUtils.setAutoCommit(connection, originalAutoCommit);
-      ConnectionUtils.close(connection);
+      close(connection, originalAutoCommit);
+    }
+  }
+
+  private boolean doCasState2(IdempotenceParamWrapper param, ConsumeState expected, ConsumeState consumeState)
+          throws SQLException {
+    boolean result;
+    Connection connection = null;
+    boolean originalAutoCommit = false;
+    try {
+      connection = dataSource.getConnection();
+      originalAutoCommit = ConnectionUtils.setAutoCommitFalse(connection);
+      try (PreparedStatement ps = connection.prepareStatement(UPDATE_SQL2)) {
+        ps.setString(1, consumeState.name());
+        ps.setString(2, param.getNamespace());
+        ps.setString(3, param.getPrefix());
+        ps.setString(4, param.getRawKey());
+        ps.setString(5, expected.name());
+        ps.setString(6, param.getXId());
+        result = ps.executeUpdate() == 1;
+      }
+      connection.commit();
+      return result;
+    } catch (SQLException e) {
+      rollback(connection);
+      throw e;
+    } finally {
+      close(connection, originalAutoCommit);
     }
   }
 
@@ -212,8 +250,8 @@ public class DbStateCenter implements StateCenter, InitializingBean, Application
           "insert into t_idempotence_exception_log "
                   + "set `namespace` = ?, `prefix` = ?, `raw_key` = ?, `consume_mode` = ?, `x_id` = ?, `consume_stage` = ?, `scenario` = ?, `args` = ?, `exception_msg` = ?, `exception_stack` = ?, `expire_time` = date_add(now(), interval ? second)";
 
-  @SneakyThrows
-  private void doSaveLog(IdempotenceParamWrapper param, ConsumeStage consumeStage, String argsJson, String message, Throwable throwable) {
+  private void doSaveLog(IdempotenceParamWrapper param, ConsumeStage consumeStage, String argsJson, String message, Throwable throwable)
+          throws SQLException {
     Connection connection = null;
     boolean originalAutoCommit = false;
     try {
@@ -244,13 +282,10 @@ public class DbStateCenter implements StateCenter, InitializingBean, Application
       }
       connection.commit();
     } catch (SQLException e) {
-      if (connection != null) {
-        connection.rollback();
-      }
+      rollback(connection);
       throw e;
     } finally {
-      ConnectionUtils.setAutoCommit(connection, originalAutoCommit);
-      ConnectionUtils.close(connection);
+      close(connection, originalAutoCommit);
     }
   }
 
@@ -292,28 +327,52 @@ public class DbStateCenter implements StateCenter, InitializingBean, Application
 
       connection.commit();
     } catch (SQLException e) {
-      if (connection != null) {
-        connection.rollback();
-      }
+      rollback(connection);
       throw e;
     } finally {
-      ConnectionUtils.setAutoCommit(connection, originalAutoCommit);
-      ConnectionUtils.close(connection);
+      close(connection, originalAutoCommit);
     }
     return true;
   }
 
-  @SneakyThrows
-  private void doSetSaveHistoryPs(StateCenterEntity stateCenterEntity, PreparedStatement ps) {
+  private void doSetSaveHistoryPs(StateCenterEntity stateCenterEntity, PreparedStatement ps)
+          throws SQLException {
     ps.setString(1, stateCenterEntity.getNamespace());
     ps.setString(2, stateCenterEntity.getPrefix());
     ps.setString(3, stateCenterEntity.getRawKey());
     ps.setString(4, stateCenterEntity.getConsumeMode().name());
     ps.setString(5, stateCenterEntity.getScenario().name());
     ps.setString(6, stateCenterEntity.getXId());
-    ps.setObject(7, stateCenterEntity.getConsumeState().name());
+    ps.setString(7, stateCenterEntity.getConsumeState().name());
     ps.setObject(8, stateCenterEntity.getExpireTime());
     ps.setObject(9, stateCenterEntity.getCreateTime());
+  }
+
+  @Override
+  @SneakyThrows
+  public void handle(IdempotenceException idempotenceException) {
+    IdempotenceKey idempotenceKey = idempotenceException.getIdempotenceKey();
+    ConsumeStage consumeStage = idempotenceException.getConsumeStage();
+    String xId = idempotenceException.getXId();
+    if (consumeStage == ConsumeStage.GETSET_IF_ABSENT_ERROR_AND_DELETE_ERROR
+            || consumeStage == ConsumeStage.SERVICE_EXCEPTION_AND_DELETE_ERROR) {
+      IdempotenceParamWrapper param = new IdempotenceParamWrapper();
+      param.setNamespace(idempotenceKey.getNamespace());
+      param.setPrefix(idempotenceKey.getPrefix());
+      param.setRawKey(idempotenceKey.getRawKey());
+      param.setXId(xId);
+
+      delete(param);
+    } else if (consumeStage == ConsumeStage.CAS_CONSUMING_TO_EXCEPTION_ERROR
+            || consumeStage == ConsumeStage.RETRY_ERROR_AND_RESET_ERROR) {
+      IdempotenceParamWrapper param = new IdempotenceParamWrapper();
+      param.setNamespace(idempotenceKey.getNamespace());
+      param.setPrefix(idempotenceKey.getPrefix());
+      param.setRawKey(idempotenceKey.getRawKey());
+      param.setXId(xId);
+
+      casState(param, ConsumeState.CONSUMING, ConsumeState.EXCEPTION, false);
+    }
   }
 
   @Override
@@ -333,6 +392,22 @@ public class DbStateCenter implements StateCenter, InitializingBean, Application
             ArrayUtils.asHashSet("id", "namespace", "prefix", "raw_key", "consume_mode", "x_id", "consume_stage", "scenario", "args", "exception_msg", "exception_stack", "expire_time", "create_time"), "id",
             "t_idempotence_exception_log_bak");
     exceptionLogCronBak.cronClean();
+  }
+
+  private void close(Connection connection, boolean originalAutoCommit)
+          throws SQLException {
+    if (connection == null) {
+      return;
+    }
+    ConnectionUtils.setAutoCommit(connection, originalAutoCommit);
+    ConnectionUtils.close(connection);
+  }
+
+  private void rollback(Connection connection)
+          throws SQLException {
+    if (connection != null) {
+      connection.rollback();
+    }
   }
 
   @Override

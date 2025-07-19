@@ -85,7 +85,7 @@ public class IdempotenceRepeatConsumeDbTest extends AbstractIdempotenceDbTest {
       });
     } catch (IdempotenceException idempotenceException) {
       Assert.assertEquals(ConsumeStage.REPEATED_CONSUMPTION, idempotenceException.getConsumeStage());
-      String expected2 = "Exception occurred in [REPEATED_CONSUMPTION] stage. [idempotence:prefix:DbStateCenter_REPEATED_CONSUMPTION] has consumed.";
+      String expected2 = "Exception occurred in [REPEATED_CONSUMPTION] stage. [idempotence:prefix:DbStateCenter_REPEATED_CONSUMPTION] has consumed and its current state is [SUCCESS].";
       assertStateCenterEquals(dataSource, rawKey, null, "SUCCESS");
       assertStateCenterEquals(dataSource, rawKey, idempotenceException, null);
       assertStateCenterHisEquals(dataSource, rawKey, idempotenceException, null);

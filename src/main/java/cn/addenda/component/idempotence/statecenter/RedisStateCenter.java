@@ -2,9 +2,7 @@ package cn.addenda.component.idempotence.statecenter;
 
 import cn.addenda.component.base.collection.ArrayUtils;
 import cn.addenda.component.base.jackson.util.JacksonUtils;
-import cn.addenda.component.idempotence.ConsumeStage;
-import cn.addenda.component.idempotence.ConsumeState;
-import cn.addenda.component.idempotence.IdempotenceParamWrapper;
+import cn.addenda.component.idempotence.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -43,27 +41,10 @@ public class RedisStateCenter implements StateCenter {
                     + "end ");
     GET_SET_SCRIPT.setResultType(String.class);
 
+    /**
+     * CAS其他xId的数据，修改expireTime
+     */
     DO_CAS_STATE_1_SCRIPT.setScriptText(
-            "local key = KEYS[1];"
-                    + "local xId = ARGV[1];"
-                    + "local expected = ARGV[2];"
-                    + "local consumeState = ARGV[3];"
-                    + "local ttlSecs = ARGV[4];"
-                    + "if(redis.call('hget', key, 'xId')) ~= xId then "
-                    + "    return false "
-                    + "else "
-                    + "    if(redis.call('hget', key, 'consumeState')) == expected then "
-                    + "         redis.call('hset', key, 'xId', xId); "
-                    + "         redis.call('hset', key, 'consumeState', consumeState); "
-                    + "         redis.call('expire', key, ttlSecs); "
-                    + "         return true "
-                    + "     else "
-                    + "         return false "
-                    + "     end "
-                    + "end ");
-    DO_CAS_STATE_1_SCRIPT.setResultType(Boolean.class);
-
-    DO_CAS_STATE_2_SCRIPT.setScriptText(
             "local key = KEYS[1];"
                     + "local xId = ARGV[1];"
                     + "local expected = ARGV[2];"
@@ -77,6 +58,26 @@ public class RedisStateCenter implements StateCenter {
                     + "else "
                     + "    return false "
                     + "end");
+    DO_CAS_STATE_1_SCRIPT.setResultType(Boolean.class);
+
+    /**
+     * CAS当前xId的数据，不修改expireTime
+     */
+    DO_CAS_STATE_2_SCRIPT.setScriptText(
+            "local key = KEYS[1];"
+                    + "local xId = ARGV[1];"
+                    + "local expected = ARGV[2];"
+                    + "local consumeState = ARGV[3];"
+                    + "if(redis.call('hget', key, 'xId')) ~= xId then "
+                    + "    return false "
+                    + "else "
+                    + "    if(redis.call('hget', key, 'consumeState')) == expected then "
+                    + "         redis.call('hset', key, 'consumeState', consumeState); "
+                    + "         return true "
+                    + "     else "
+                    + "         return false "
+                    + "     end "
+                    + "end ");
     DO_CAS_STATE_2_SCRIPT.setResultType(Boolean.class);
 
     DELETE_SCRIPT.setScriptText(
@@ -97,8 +98,8 @@ public class RedisStateCenter implements StateCenter {
 
   @Override
   public ConsumeState getSetIfAbsent(IdempotenceParamWrapper param, ConsumeState consumeState) {
-    String old = stringRedisTemplate.execute(GET_SET_SCRIPT, ArrayUtils.asArrayList(param.getKey())
-            , param.getXId(), param.getConsumeMode().name(), consumeState.name(), String.valueOf(param.getScenario()), String.valueOf(param.getTtlInSecs()));
+    String old = stringRedisTemplate.execute(GET_SET_SCRIPT, ArrayUtils.asArrayList(param.getKey()),
+            param.getXId(), param.getConsumeMode().name(), consumeState.name(), param.getScenario().name(), String.valueOf(param.getTtlInSecs()));
     if (old == null) {
       return null;
     }
@@ -107,7 +108,7 @@ public class RedisStateCenter implements StateCenter {
 
   @Override
   public boolean casState(IdempotenceParamWrapper param, ConsumeState expected, ConsumeState consumeState, boolean casOther) {
-    return casOther ? doCasState2(param, expected, consumeState) : doCasState1(param, expected, consumeState);
+    return casOther ? doCasState1(param, expected, consumeState) : doCasState2(param, expected, consumeState);
   }
 
   private boolean doCasState1(IdempotenceParamWrapper param, ConsumeState expected, ConsumeState consumeState) {
@@ -117,7 +118,7 @@ public class RedisStateCenter implements StateCenter {
 
   private boolean doCasState2(IdempotenceParamWrapper param, ConsumeState expected, ConsumeState consumeState) {
     return Boolean.TRUE.equals(stringRedisTemplate.execute(DO_CAS_STATE_2_SCRIPT, ArrayUtils.asArrayList(param.getKey()),
-            param.getXId(), expected.name(), consumeState.name(), String.valueOf(param.getTtlInSecs())));
+            param.getXId(), expected.name(), consumeState.name()));
   }
 
   /**
@@ -134,6 +135,32 @@ public class RedisStateCenter implements StateCenter {
   public boolean delete(IdempotenceParamWrapper param) {
     return Boolean.TRUE.equals(stringRedisTemplate.execute(
             DELETE_SCRIPT, ArrayUtils.asArrayList(param.getKey()), param.getXId()));
+  }
+
+  @Override
+  public void handle(IdempotenceException idempotenceException) {
+    IdempotenceKey idempotenceKey = idempotenceException.getIdempotenceKey();
+    ConsumeStage consumeStage = idempotenceException.getConsumeStage();
+    String xId = idempotenceException.getXId();
+    if (consumeStage == ConsumeStage.GETSET_IF_ABSENT_ERROR_AND_DELETE_ERROR
+            || consumeStage == ConsumeStage.SERVICE_EXCEPTION_AND_DELETE_ERROR) {
+      IdempotenceParamWrapper param = new IdempotenceParamWrapper();
+      param.setNamespace(idempotenceKey.getNamespace());
+      param.setPrefix(idempotenceKey.getPrefix());
+      param.setRawKey(idempotenceKey.getRawKey());
+      param.setXId(xId);
+
+      delete(param);
+    } else if (consumeStage == ConsumeStage.CAS_CONSUMING_TO_EXCEPTION_ERROR
+            || consumeStage == ConsumeStage.RETRY_ERROR_AND_RESET_ERROR) {
+      IdempotenceParamWrapper param = new IdempotenceParamWrapper();
+      param.setNamespace(idempotenceKey.getNamespace());
+      param.setPrefix(idempotenceKey.getPrefix());
+      param.setRawKey(idempotenceKey.getRawKey());
+      param.setXId(xId);
+
+      casState(param, ConsumeState.CONSUMING, ConsumeState.EXCEPTION, false);
+    }
   }
 
 }

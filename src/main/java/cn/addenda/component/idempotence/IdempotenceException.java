@@ -1,7 +1,10 @@
 package cn.addenda.component.idempotence;
 
 import cn.addenda.component.base.exception.SystemException;
+import cn.addenda.component.base.string.Slf4jUtils;
+import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.Setter;
 
 /**
  * @author addenda
@@ -10,18 +13,28 @@ import lombok.Getter;
 public class IdempotenceException extends SystemException {
 
   @Getter
+  @Setter(AccessLevel.PRIVATE)
+  private IdempotenceKey idempotenceKey;
+
+  @Getter
+  @Setter(AccessLevel.PRIVATE)
   private ConsumeStage consumeStage;
 
   @Getter
+  @Setter(AccessLevel.PRIVATE)
   private String xId;
+
+  public IdempotenceException() {
+  }
 
   public IdempotenceException(String message, ConsumeStage consumeStage) {
     super(message);
     this.consumeStage = consumeStage;
   }
 
-  public IdempotenceException(String message, ConsumeStage consumeStage, String xId, Throwable cause) {
+  public IdempotenceException(String message, IdempotenceKey idempotenceKey, ConsumeStage consumeStage, String xId, Throwable cause) {
     super(message, cause);
+    this.idempotenceKey = idempotenceKey;
     this.consumeStage = consumeStage;
     this.xId = xId;
   }
@@ -38,6 +51,15 @@ public class IdempotenceException extends SystemException {
 
   @Override
   public String getMessage() {
-    return "xId[" + xId + "]. " + super.getMessage();
+    return Slf4jUtils.format("idempotenceKey[{}], xId[{}], consumeStage[{}]. ", idempotenceKey, xId, consumeStage) + super.getMessage();
   }
+
+  public static IdempotenceException of(String xId, IdempotenceKey idempotenceKey, ConsumeStage consumeStage) {
+    IdempotenceException idempotenceException = new IdempotenceException();
+    idempotenceException.setIdempotenceKey(idempotenceKey);
+    idempotenceException.setXId(xId);
+    idempotenceException.setConsumeStage(consumeStage);
+    return idempotenceException;
+  }
+
 }

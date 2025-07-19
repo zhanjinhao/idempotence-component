@@ -1,6 +1,8 @@
 package cn.addenda.component.idempotence.test.redis;
 
 import cn.addenda.component.idempotence.*;
+import cn.addenda.component.idempotence.statecenter.RedisStateCenter;
+import cn.addenda.component.idempotence.statecenter.StateCenter;
 import cn.addenda.component.idempotence.test.IdempotenceTestConfiguration;
 import org.junit.After;
 import org.junit.Assert;
@@ -24,6 +26,11 @@ public class IdempotenceReConsumeAfterExceptionRedisTest extends AbstractIdempot
 
   @Configuration
   static class AConfig {
+    @Bean
+    public RedisStateCenter redisStateCenter(StringRedisTemplate dataSource) {
+      return new RedisStateCenter(dataSource);
+    }
+
     @Bean
     public RedisStateCenter_RETRY_ERROR RedisStateCenter_RETRY_ERROR(StringRedisTemplate dataSource) {
       return new RedisStateCenter_RETRY_ERROR(dataSource);
@@ -132,6 +139,10 @@ public class IdempotenceReConsumeAfterExceptionRedisTest extends AbstractIdempot
     } catch (IdempotenceException idempotenceException) {
       Assert.assertEquals(ConsumeStage.RETRY_ERROR_AND_RESET_ERROR, idempotenceException.getConsumeStage());
       assertStateCenterEquals(dataSource, rawKey, idempotenceException, "EXCEPTION");
+
+      StateCenter stateCenter = context.getBean("redisStateCenter", StateCenter.class);
+      stateCenter.handle(idempotenceException);
+      assertStateCenterEquals(dataSource, rawKey, idempotenceException, "EXCEPTION");
     }
 
   }
@@ -172,6 +183,10 @@ public class IdempotenceReConsumeAfterExceptionRedisTest extends AbstractIdempot
     } catch (IdempotenceException idempotenceException) {
       Assert.assertEquals(ConsumeStage.RETRY_ERROR_AND_RESET_ERROR, idempotenceException.getConsumeStage());
       assertStateCenterEquals(dataSource, rawKey, idempotenceException, "CONSUMING");
+
+      StateCenter stateCenter = context.getBean("redisStateCenter", StateCenter.class);
+      stateCenter.handle(idempotenceException);
+      assertStateCenterEquals(dataSource, rawKey, idempotenceException, "EXCEPTION");
     }
 
   }

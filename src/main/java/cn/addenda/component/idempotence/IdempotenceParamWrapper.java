@@ -1,6 +1,5 @@
 package cn.addenda.component.idempotence;
 
-import cn.addenda.component.base.string.StringUtils;
 import lombok.*;
 
 /**
@@ -26,16 +25,16 @@ public class IdempotenceParamWrapper extends IdempotenceAttr {
    */
   private int ttlInSecs;
 
+  public IdempotenceKey toKey() {
+    return IdempotenceKey.of(namespace, getPrefix(), rawKey);
+  }
+
   public String getKey() {
-    return format(namespace) + ":" + format(getPrefix()) + ":" + format(rawKey);
+    return toKey().getKey();
   }
 
   public String getSimpleKey() {
-    return format(getPrefix()) + ":" + format(rawKey);
-  }
-
-  private String format(String a) {
-    return StringUtils.biTrimSpecifiedChar(a, ':');
+    return toKey().getSimpleKey();
   }
 
 }

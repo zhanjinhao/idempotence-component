@@ -2,6 +2,8 @@ package cn.addenda.component.idempotence.test.redis;
 
 import cn.addenda.component.base.exception.ServiceException;
 import cn.addenda.component.idempotence.*;
+import cn.addenda.component.idempotence.statecenter.RedisStateCenter;
+import cn.addenda.component.idempotence.statecenter.StateCenter;
 import cn.addenda.component.idempotence.test.IdempotenceTestConfiguration;
 import org.junit.After;
 import org.junit.Assert;
@@ -26,8 +28,18 @@ public class IdempotenceConsumeRedisTest extends AbstractIdempotenceRedisTest {
   @Configuration
   static class AConfig {
     @Bean
-    public RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR(StringRedisTemplate dataSource) {
-      return new RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR(dataSource);
+    public RedisStateCenter redisStateCenter(StringRedisTemplate dataSource) {
+      return new RedisStateCenter(dataSource);
+    }
+
+    @Bean
+    public RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING(StringRedisTemplate dataSource) {
+      return new RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING(dataSource);
+    }
+
+    @Bean
+    public RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL(StringRedisTemplate dataSource) {
+      return new RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL(dataSource);
     }
 
     @Bean
@@ -95,11 +107,11 @@ public class IdempotenceConsumeRedisTest extends AbstractIdempotenceRedisTest {
 
 
   @Test
-  public void test_SERVICE_EXCEPTION_AND_DELETE_ERROR() throws InterruptedException {
+  public void test_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING() throws InterruptedException {
     IdempotenceHelper idempotenceHelper = context.getBean(IdempotenceHelper.class);
     StringRedisTemplate dataSource = context.getBean(StringRedisTemplate.class);
 
-    String rawKey = "RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR";
+    String rawKey = "RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING";
     try {
       IdempotenceAttr build = IdempotenceAttr.builder()
               .prefix(prefix)
@@ -112,7 +124,39 @@ public class IdempotenceConsumeRedisTest extends AbstractIdempotenceRedisTest {
         throw new ServiceException("for purpose! ");
       });
     } catch (IdempotenceException idempotenceException) {
+      Assert.assertEquals(ConsumeStage.SERVICE_EXCEPTION_AND_DELETE_ERROR, idempotenceException.getConsumeStage());
       assertStateCenterEquals(dataSource, rawKey, idempotenceException, "CONSUMING");
+
+      StateCenter stateCenter = context.getBean("redisStateCenter", StateCenter.class);
+      stateCenter.handle(idempotenceException);
+      assertStateCenterEquals(dataSource, rawKey, null, null);
+    }
+  }
+
+  @Test
+  public void test_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL() throws InterruptedException {
+    IdempotenceHelper idempotenceHelper = context.getBean(IdempotenceHelper.class);
+    StringRedisTemplate dataSource = context.getBean(StringRedisTemplate.class);
+
+    String rawKey = "RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL";
+    try {
+      IdempotenceAttr build = IdempotenceAttr.builder()
+              .prefix(prefix)
+              .spEL(rawKey)
+              .scenario(IdempotenceScenario.REQUEST)
+              .stateCenter(rawKey)
+              .consumeMode(ConsumeMode.SUCCESS)
+              .build();
+      idempotenceHelper.idempotent(build, () -> {
+        throw new ServiceException("for purpose! ");
+      });
+    } catch (IdempotenceException idempotenceException) {
+      Assert.assertEquals(ConsumeStage.SERVICE_EXCEPTION_AND_DELETE_ERROR, idempotenceException.getConsumeStage());
+      assertStateCenterEquals(dataSource, rawKey, null, null);
+
+      StateCenter stateCenter = context.getBean("redisStateCenter", StateCenter.class);
+      stateCenter.handle(idempotenceException);
+      assertStateCenterEquals(dataSource, rawKey, null, null);
     }
   }
 
@@ -161,6 +205,10 @@ public class IdempotenceConsumeRedisTest extends AbstractIdempotenceRedisTest {
     } catch (IdempotenceException idempotenceException) {
       Assert.assertEquals(ConsumeStage.CAS_CONSUMING_TO_EXCEPTION_ERROR, idempotenceException.getConsumeStage());
       assertStateCenterEquals(dataSource, rawKey, idempotenceException, "CONSUMING");
+
+      StateCenter stateCenter = context.getBean("redisStateCenter", StateCenter.class);
+      stateCenter.handle(idempotenceException);
+      assertStateCenterEquals(dataSource, rawKey, idempotenceException, "EXCEPTION");
     }
   }
 
@@ -184,6 +232,10 @@ public class IdempotenceConsumeRedisTest extends AbstractIdempotenceRedisTest {
       });
     } catch (IdempotenceException idempotenceException) {
       Assert.assertEquals(ConsumeStage.CAS_CONSUMING_TO_EXCEPTION_ERROR, idempotenceException.getConsumeStage());
+      assertStateCenterEquals(dataSource, rawKey, idempotenceException, "EXCEPTION");
+
+      StateCenter stateCenter = context.getBean("redisStateCenter", StateCenter.class);
+      stateCenter.handle(idempotenceException);
       assertStateCenterEquals(dataSource, rawKey, idempotenceException, "EXCEPTION");
     }
   }

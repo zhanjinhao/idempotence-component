@@ -61,13 +61,25 @@ public abstract class AbstractIdempotenceDbTest {
     }
   }
 
-  static class DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR extends DbStateCenter {
-    public DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR(DataSource dataSource) {
+  static class DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING extends DbStateCenter {
+    public DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING(DataSource dataSource) {
       super(dataSource);
     }
 
     @Override
     public boolean delete(IdempotenceParamWrapper param) {
+      throw new RuntimeException("delete");
+    }
+  }
+
+  static class DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL extends DbStateCenter {
+    public DbStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL(DataSource dataSource) {
+      super(dataSource);
+    }
+
+    @Override
+    public boolean delete(IdempotenceParamWrapper param) {
+      super.delete(param);
       throw new RuntimeException("delete");
     }
   }

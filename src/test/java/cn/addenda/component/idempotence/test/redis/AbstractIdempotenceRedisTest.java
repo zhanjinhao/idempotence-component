@@ -8,11 +8,6 @@ import lombok.SneakyThrows;
 import org.junit.Assert;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
-import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-
 public abstract class AbstractIdempotenceRedisTest {
 
   static class RedisStateCenter_BEFORE_CONSUMPTION extends RedisStateCenter {
@@ -61,13 +56,25 @@ public abstract class AbstractIdempotenceRedisTest {
     }
   }
 
-  static class RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR extends RedisStateCenter {
-    public RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR(StringRedisTemplate dataSource) {
+  static class RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING extends RedisStateCenter {
+    public RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_CONSUMING(StringRedisTemplate dataSource) {
       super(dataSource);
     }
 
     @Override
     public boolean delete(IdempotenceParamWrapper param) {
+      throw new RuntimeException("delete");
+    }
+  }
+
+  static class RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL extends RedisStateCenter {
+    public RedisStateCenter_SERVICE_EXCEPTION_AND_DELETE_ERROR_NULL(StringRedisTemplate dataSource) {
+      super(dataSource);
+    }
+
+    @Override
+    public boolean delete(IdempotenceParamWrapper param) {
+      super.delete(param);
       throw new RuntimeException("delete");
     }
   }
@@ -193,56 +200,6 @@ public abstract class AbstractIdempotenceRedisTest {
     }
 
     Assert.assertEquals(expected, consumeState);
-  }
-
-
-  @SneakyThrows
-  protected void assertStateCenterHisEquals(DataSource dataSource, String rawKey, IdempotenceException idempotenceException,
-                                            String expected) {
-    try (Connection connection = dataSource.getConnection()) {
-      String sql1 = "select * from t_idempotence_state_center_his " +
-              "where namespace = 'idempotence' and prefix = 'prefix' and raw_key = ?";
-      String sql2 = "select * from t_idempotence_state_center_his " +
-              "where namespace = 'idempotence' and prefix = 'prefix' and raw_key = ? and x_id = ?";
-      PreparedStatement ps = connection.prepareStatement(idempotenceException != null ? sql2 : sql1);
-
-      ps.setString(1, rawKey);
-      if (idempotenceException != null) {
-        ps.setString(2, idempotenceException.getXId());
-      }
-      ResultSet resultSet = ps.executeQuery();
-
-      String a = null;
-      while (resultSet.next()) {
-        a = resultSet.getString("consume_state");
-      }
-      Assert.assertEquals(expected, a);
-    }
-  }
-
-  @SneakyThrows
-  protected void assertExceptionLogEquals(DataSource dataSource, String rawKey, IdempotenceException idempotenceException,
-                                          String expected) {
-    try (Connection connection = dataSource.getConnection()) {
-      String sql1 = "select * from t_idempotence_exception_log " +
-              "where namespace = 'idempotence' and prefix = 'prefix' and raw_key = ?";
-      String sql2 = "select * from t_idempotence_exception_log " +
-              "where namespace = 'idempotence' and prefix = 'prefix' and raw_key = ? and x_id = ?";
-      PreparedStatement ps = connection.prepareStatement(idempotenceException != null ? sql2 : sql1);
-
-      ps.setString(1, rawKey);
-      if (idempotenceException != null) {
-        ps.setString(2, idempotenceException.getXId());
-      }
-      ResultSet resultSet = ps.executeQuery();
-
-      String a = null;
-      while (resultSet.next()) {
-        a = resultSet.getString("exception_msg");
-      }
-      Assert.assertEquals(expected, a);
-    }
-
   }
 
 }

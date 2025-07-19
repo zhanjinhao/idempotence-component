@@ -2,6 +2,7 @@ package cn.addenda.component.idempotence.statecenter;
 
 import cn.addenda.component.idempotence.ConsumeStage;
 import cn.addenda.component.idempotence.ConsumeState;
+import cn.addenda.component.idempotence.IdempotenceException;
 import cn.addenda.component.idempotence.IdempotenceParamWrapper;
 
 /**
@@ -18,7 +19,9 @@ public interface StateCenter {
   ConsumeState getSetIfAbsent(IdempotenceParamWrapper param, ConsumeState consumeState);
 
   /**
-   * 状态cas到指定的状态，cas的时候不判断xId，但是cas之后key的xId为当前线程。会更新ttl。
+   * 状态cas到指定的状态。
+   * casOther=true:  cas的时候不判断xId，但是cas之后key的xId为当前线程。会更新ttl。
+   * casOther=false: cas的时候判断xId，但是cas之后key的xId为当前线程。不会更新ttl。
    *
    * @param casOther 是否能cas其他XId设置的数据。
    */
@@ -33,5 +36,10 @@ public interface StateCenter {
    * 删除本次消费的记录（xId一致才能删除）。幂等。
    */
   boolean delete(IdempotenceParamWrapper param);
+
+  /**
+   * 异常的后置处理。执行完成之后，不再有阻塞调用的问题。
+   */
+  void handle(IdempotenceException idempotenceException);
 
 }

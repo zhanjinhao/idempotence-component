@@ -113,7 +113,7 @@ public class IdempotenceSupport implements EnvironmentAware, InitializingBean, A
         } else if (consumeState == ConsumeState.EXCEPTION) {
           return reConsumeAfterException(stateCenter, param, supplier, arguments);
         } else if (consumeState == ConsumeState.SUCCESS) {
-          return repeatConsume(stateCenter, param, arguments);
+          return repeatConsume(stateCenter, param, ConsumeState.SUCCESS, arguments);
         } else if (consumeState == ConsumeState.CONSUMING) {
           return concurrentConsume(stateCenter, param, supplier, retry, arguments);
         }
@@ -177,7 +177,7 @@ public class IdempotenceSupport implements EnvironmentAware, InitializingBean, A
         if (consumeState == null) {
           return consume(stateCenter, param, supplier, arguments);
         } else {
-          return repeatConsume(stateCenter, param, arguments);
+          return repeatConsume(stateCenter, param, consumeState, arguments);
         }
       }
     });
@@ -261,11 +261,11 @@ public class IdempotenceSupport implements EnvironmentAware, InitializingBean, A
    * MQ：打印error日志。 <br/>
    * REQUEST：抛ServiceException，通知用户。
    */
-  private Object repeatConsume(StateCenter stateCenter, IdempotenceParamWrapper param, Object[] arguments) throws Throwable {
+  private Object repeatConsume(StateCenter stateCenter, IdempotenceParamWrapper param, ConsumeState currentState, Object[] arguments) throws Throwable {
     IdempotenceScenario scenario = param.getScenario();
     switch (scenario) {
       case MQ:
-        String msg1 = String.format("[%s] has consumed.", param.getKey());
+        String msg1 = String.format("[%s] has consumed and its current state is [%s].", param.getKey(), currentState.name());
         throw throwableCallback(stateCenter, param, arguments, ConsumeStage.REPEATED_CONSUMPTION, msg1, new IdempotenceRepeatedConsumptionException(msg1));
       case REQUEST:
         String repeatConsumptionMsg = param.getRepeatConsumptionMsg();
@@ -309,7 +309,7 @@ public class IdempotenceSupport implements EnvironmentAware, InitializingBean, A
     if (consumeStage == ConsumeStage.IN_CONSUMPTION) {
       return throwable;
     }
-    return new IdempotenceException(msg, consumeStage, param.getXId(), throwable);
+    return new IdempotenceException(msg, param.toKey(), consumeStage, param.getXId(), throwable);
   }
 
   private <R> void retryGet(TSupplier<R> supplier, IdempotenceParamWrapper param) throws Throwable {
